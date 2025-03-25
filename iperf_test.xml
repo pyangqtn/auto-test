@@ -1,0 +1,77 @@
+<config>
+    <execution_count>1</execution_count>
+    <global_env>
+        <own_ip>None</own_ip>
+        <dst_ip>192.168.1.149</dst_ip>
+        <ping_param>-d 5</ping_param>
+        <savelog>yes</savelog>
+    </global_env>
+    <device>
+        <name>/dev/ttyUSB0</name>
+        <baudrate>115200</baudrate>
+        <parity>N</parity>
+        <data_bits>8</data_bits>
+        <stop_bits>1</stop_bits>
+    </device>
+    <commands>
+        <command execute="yes">
+            <text>rtos_info</text>
+            <repeat>1</repeat>
+            <interval>1</interval>
+            <recv_interval>1</recv_interval>
+            <prerun>yes</prerun>
+        </command>
+        <command execute="yes">
+            <text>wifi_scan</text>
+            <repeat>1</repeat>
+            <interval>5</interval>
+            <recv_interval>1</recv_interval>
+        </command>
+        <command execute="yes">
+            <text>wifi_connect -s HUAWEI_AX6 -k 12345678</text>
+            <repeat>1</repeat>
+            <interval>8</interval>
+            <recv_interval>1</recv_interval>
+            <parse_rslt>IP</parse_rslt>
+        </command>
+        <command execute="yes">
+            <text>ping</text>
+            <cmd_attri>DUT_IP</cmd_attri>
+            <native>yes</native>
+            <repeat>1</repeat>
+            <interval>5</interval>
+            <recv_interval>1</recv_interval>
+        </command>
+        <command execute="no">
+            <text>iperf</text>
+            <cmd_attri>FROM_PC IPERF_TCPS</cmd_attri>
+            <native>yes</native>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval>1</recv_interval>
+        </command>
+        <command execute="no">
+            <text>iperf</text>
+            <cmd_attri>FROM_PC IPERF_TCPC</cmd_attri>
+            <native>yes</native>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval>1</recv_interval>
+        </command>
+        <command execute="no">
+            <text>iperf</text>
+            <cmd_attri>FROM_DUT IPERF_TCPS</cmd_attri>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval>1</recv_interval>
+        </command>
+        <command execute="no">
+            <text>iperf</text>
+            <cmd_attri>FROM_DUT IPERF_TCPC</cmd_attri>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval>1</recv_interval>
+        </command>
+    </commands>
+</config>
+

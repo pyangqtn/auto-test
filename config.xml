@@ -1,0 +1,19 @@
+<config>
+    <execution_count>1</execution_count>
+    <device>
+        <name>/dev/ttyUSB0</name>
+        <baudrate>115200</baudrate>
+        <parity>N</parity>
+        <data_bits>8</data_bits>
+        <stop_bits>1</stop_bits>
+    </device>
+    <commands>
+        <command execute="yes">
+            <text>scan</text>
+            <repeat>3</repeat>
+            <interval>1.0</interval>
+            <recv_interval>1.5</recv_interval>
+        </command>
+    </commands>
+</config>
+

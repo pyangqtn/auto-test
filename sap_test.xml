@@ -1,0 +1,188 @@
+<config>
+    <execution_count>20000</execution_count>
+    <device>
+        <name>/dev/ttyUSB0</name> <!-- Use COM1 for Windows -->
+        <baudrate>115200</baudrate>
+        <parity>N</parity>
+        <data_bits>8</data_bits>
+        <stop_bits>1</stop_bits>
+    </device>
+    <commands>
+        <command execute="yes">
+            <text>scan</text>
+            <repeat>3</repeat>
+            <interval>1.0</interval>
+            <recv_interval>1.5</recv_interval>
+        </command>
+        <command execute="yes">
+            <text>status</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="no">
+            <text>ap_close</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>ap -i wl1 -s ARCS_SAP_05 -f 2412 -a WEP -k asdfk</text>
+            <repeat>1</repeat>
+            <interval>3.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="no">
+            <text>disconnect</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>dhcps start</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>status</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>dhcps stop</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>ap_close</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>ap -i wl1 -s ARCS_SAP_05 -f 2412 -a WPA -k 12345678</text>
+            <repeat>1</repeat>
+            <interval>3.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="no">
+            <text>disconnect</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>dhcps start</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>status</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>dhcps stop</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>ap_close</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>ap -i wl1 -s ARCS_SAP_05 -f 2412 -a WPA2 -k 12345678</text>
+            <repeat>1</repeat>
+            <interval>3.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>dhcps start</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>status</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>dhcps stop</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="no">
+            <text>disconnect</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>ap_close</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>ap -i wl1 -s ARCS_SAP_05 -f 2412 -a SAE -k 12345678</text>
+            <repeat>1</repeat>
+            <interval>3.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="no">
+            <text>disconnect</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>ap_close</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+	<!-- SWITCH to STA mode -->
+        <command execute="yes">
+            <text>connect -s ReadMi_24G -k listenai</text>
+            <repeat>1</repeat>
+            <interval>3.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>dhcpc start</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>status</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>dhcpc stop</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+        <command execute="yes">
+            <text>disconnect</text>
+            <repeat>1</repeat>
+            <interval>1.0</interval>
+            <recv_interval></recv_interval> <!-- Will default to interval -->
+        </command>
+    </commands>
+</config>
+

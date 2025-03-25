@@ -1,0 +1,3 @@
+#!/bin/sh
+
+nuitka --standalone --onefile --remove-output --nofollow-imports $1
