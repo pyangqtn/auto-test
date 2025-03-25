@@ -1,5 +1,5 @@
 # UART Command Sender
-Author: "pyang<caoerk@hotmail.com>"
+Author: "pyang \<caoerk@hotmail.com\>"
 ## Description
 
 Send commands to a UART device using configurations from an XML file.
