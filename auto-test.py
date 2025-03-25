@@ -19,6 +19,21 @@ DEFAULT_DST_IP = "0.0.0.0"
 DEFAULT_PING_PARAM = None
 DEFAULT_SAVELOG = "no"
 
+class IperfHandler:
+    def __init__(self, iperf_type, iperf_mode, iperf_itvl, iperf_port, iperf_time, iperf_dstip, iperf_rate):
+        self.iperf_type = iperf_type  # "server" or "client"
+        self.iperf_mode = iperf_mode  # "TCP" or "UDP"
+        self.iperf_itvl = iperf_itvl  # Report interval
+        self.iperf_port = iperf_port  # Port number
+        self.iperf_time = iperf_time  # Test duration
+        self.iperf_dstip = iperf_dstip  # Destination IP (client) or binding IP (server)
+        self.iperf_rate = iperf_rate  # Bandwidth limit (for UDP mode)
+
+    def __str__(self):
+        return (f"IperfHandler(iperf_type={self.iperf_type}, iperf_mode={self.iperf_mode}, "
+                f"iperf_itvl={self.iperf_itvl}, iperf_port={self.iperf_port}, iperf_time={self.iperf_time}, "
+                f"iperf_dstip={self.iperf_dstip}, iperf_rate={self.iperf_rate})")
+
 class TestEnv:
     def __init__(self, own_ip, dst_ip, ping_param, savelog=False, extra_device=None):
         self.own_ip = own_ip
@@ -65,7 +80,6 @@ class Command:
     def run(self, ser, global_env):
         if not self.execute or self.text is None:
             return
-        print(f"Start running {self.text}")
         if self.reasm and self.attri is not None:
             handler_name = f"{self.text}_attri_handler"
             if handler_name in globals():
@@ -76,11 +90,9 @@ class Command:
     
         if not self.execute or self.text is None:
             return
-        print(f"get execute for extlog is {self.execute}")
 
         for _ in range(self.repeat):
             if self.native:
-                print(f"Executing native command: {self.text}")
                 global_env.log(f"Executing native command: {self.text}")
                 subprocess.run(self.text, shell=True)
             else:
@@ -121,7 +133,6 @@ def parse_extra_device(root):
 
 def extlog_attri_handler(instance, global_env):
     global extra_uart_thread, extra_uart_running
-    print(f"get execute for extlog is {instance.execute}")
     extra_uart_running = instance.execute 
     if extra_uart_running:
         extra_uart_thread = threading.Thread(target=log_additional_uart, args=(global_env, instance.execute))
@@ -129,7 +140,6 @@ def extlog_attri_handler(instance, global_env):
     else:
         print("Skipping extra UART logging (execute flag is no).")      
     instance.execute = False
-    print(f"get execute for extlog is {instance.execute}")
     return None  # Ensure command is ignored in main loop
 
 def log_additional_uart(global_env, execute):
@@ -200,13 +210,7 @@ def parse_config(config_file):
         if cmd_attri_elem is not None:
             attri = cmd_attri_elem
             reasm = True
-#            cmd_attris = cmd_attri_elem.text.split()
-#            handler_name = f"{text}_attri_handler"
-#            if handler_name in globals():
-#                text = globals()[handler_name](text, cmd_attris, global_env, config_file, execute)
-#            else:
-#                print(f"Warning: No handler found for command attributes in '{text}'")
-        
+
         commands.append(Command(text, repeat, interval, recv_interval, parse_rslt, native, execute, prerun, reasm, attri))
 
     return execution_count, global_env, device, commands
@@ -272,12 +276,34 @@ def ping_attri_handler(instance, global_env):
     return assembled_command
 
 def iperf_attri_handler(instance, global_env):
-    assembled_command = instance.text
-    attributes = instance.attri
-    if "DST_IP" in attributes:
-        assembled_command += f" {global_env.dst_ip}"
-    if "PING_PARAM" in attributes:
-        assembled_command += f" {global_env.ping_param}"
+    iperf_elem = instance.attri
+
+    if iperf_elem is None:
+        return None
+
+    iperf_type = iperf_elem.find('iperf_type').text if iperf_elem.find('iperf_type') is not None else "client"
+    iperf_mode = iperf_elem.find('iperf_mode').text if iperf_elem.find('iperf_mode') is not None else "TCP"
+    iperf_itvl = int(iperf_elem.find('iperf_itvl').text) if iperf_elem.find('iperf_itvl') is not None else 1
+    iperf_port = int(iperf_elem.find('iperf_port').text) if iperf_elem.find('iperf_port') is not None else 5001
+    iperf_time = int(iperf_elem.find('iperf_time').text) if iperf_elem.find('iperf_time') is not None else 10
+    iperf_dstip = iperf_elem.find('iperf_dstip').text if iperf_elem.find('iperf_dstip') is not None else global_env.dst_ip
+    iperf_rate = iperf_elem.find('iperf_rate').text if iperf_elem.find('iperf_rate') is not None else ""
+
+    # Construct the iperf command
+    if iperf_type.lower() == "server":
+        assembled_command = f"iperf -s -i {iperf_itvl} -p {iperf_port}"
+    else:
+        assembled_command = f"iperf -c {iperf_dstip} -i {iperf_itvl} -p {iperf_port} -t {iperf_time}"
+    
+    # Add UDP mode if specified
+    if iperf_mode.upper() == "UDP":
+        assembled_command += " -u"
+    # Add rate if specified
+        if iperf_rate:
+            assembled_command += f" -b {iperf_rate}"
+
+    print(f"Iperf command: {assembled_command}")  # Debugging output
+    return assembled_command
 
 def print_usage():
     print("Usage: python auto-test.py <config_file>")

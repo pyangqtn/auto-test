@@ -2,8 +2,8 @@
     <execution_count>1</execution_count>
     <global_env>
         <own_ip>None</own_ip>
-        <dst_ip>192.168.1.149</dst_ip>
-        <ping_param>-d 5</ping_param>
+        <dst_ip>127.0.0.1</dst_ip>
+        <ping_param>-c 5</ping_param>
         <savelog>yes</savelog>
     </global_env>
     <device>
@@ -13,6 +13,13 @@
         <data_bits>8</data_bits>
         <stop_bits>1</stop_bits>
     </device>
+    <extra_device>
+        <name>/dev/ttyUSB1</name>
+        <baudrate>115200</baudrate>
+        <parity>N</parity>
+        <data_bits>8</data_bits>
+        <stop_bits>1</stop_bits>
+    </extra_device>
     <commands>
         <command execute="yes">
             <text>rtos_info</text>
@@ -22,52 +29,87 @@
             <prerun>yes</prerun>
         </command>
         <command execute="yes">
-            <text>wifi_scan</text>
+            <text>vserion</text>
+            <repeat>1</repeat>
+            <interval>1</interval>
+            <recv_interval>1</recv_interval>
+            <prerun>yes</prerun>
+        </command>
+        <command execute="yes">
+            <text>extlog</text>
+            <cmd_attri>EXTLOG</cmd_attri>
+            <repeat>1</repeat>
+            <interval>1</interval>
+            <recv_interval>1</recv_interval>
+            <prerun>yes</prerun>
+        </command>
+        <command execute="yes">
+            <text>iperf</text>
+            <native>no</native>
+            <cmd_attri>
+                <iperf_type>server</iperf_type>
+                <iperf_mode>TCP</iperf_mode>
+                <iperf_itvl>1</iperf_itvl>
+                <iperf_port>5020</iperf_port>
+                <iperf_time>60</iperf_time>
+                <iperf_dstip>192.168.1.1</iperf_dstip>
+                <iperf_rate>10</iperf_rate>
+            </cmd_attri>
             <repeat>1</repeat>
             <interval>5</interval>
             <recv_interval>1</recv_interval>
         </command>
         <command execute="yes">
-            <text>wifi_connect -s HUAWEI_AX6 -k 12345678</text>
-            <repeat>1</repeat>
-            <interval>8</interval>
-            <recv_interval>1</recv_interval>
-            <parse_rslt>IP</parse_rslt>
-        </command>
-        <command execute="yes">
-            <text>ping</text>
-            <cmd_attri>DUT_IP</cmd_attri>
-            <native>yes</native>
+            <text>iperf</text>
+            <native>no</native>
+            <cmd_attri>
+                <iperf_type>client</iperf_type>
+                <iperf_mode>TCP</iperf_mode>
+                <iperf_itvl>1</iperf_itvl>
+                <iperf_port>5020</iperf_port>
+                <iperf_time>60</iperf_time>
+                <iperf_dstip>192.168.1.1</iperf_dstip>
+                <iperf_rate>10</iperf_rate>
+            </cmd_attri>
             <repeat>1</repeat>
             <interval>5</interval>
             <recv_interval>1</recv_interval>
         </command>
         <command execute="no">
             <text>iperf</text>
-            <cmd_attri>FROM_PC IPERF_TCPS</cmd_attri>
+            <native>no</native>
+            <cmd_attri>
+                <iperf_type>server</iperf_type>
+                <iperf_mode>UDP</iperf_mode>
+                <iperf_itvl>1</iperf_itvl>
+                <iperf_port>5020</iperf_port>
+                <iperf_time>60</iperf_time>
+                <iperf_dstip>192.168.1.1</iperf_dstip>
+                <iperf_rate>10</iperf_rate>
+            </cmd_attri>
+            <repeat>1</repeat>
+            <interval>5</interval>
+            <recv_interval>1</recv_interval>
+        </command>
+        <command execute="no">
+            <text>iperf</text>
+            <native>no</native>
+            <cmd_attri>
+                <iperf_type>client</iperf_type>
+                <iperf_mode>UDP</iperf_mode>
+                <iperf_itvl>1</iperf_itvl>
+                <iperf_port>5020</iperf_port>
+                <iperf_time>60</iperf_time>
+                <iperf_dstip>192.168.1.1</iperf_dstip>
+                <iperf_rate>10</iperf_rate>
+            </cmd_attri>
+            <repeat>1</repeat>
+            <interval>5</interval>
+            <recv_interval>1</recv_interval>
+        </command>
+        <command execute="yes">
+            <text>lsb_release -a</text>
             <native>yes</native>
-            <repeat>1</repeat>
-            <interval>1.0</interval>
-            <recv_interval>1</recv_interval>
-        </command>
-        <command execute="no">
-            <text>iperf</text>
-            <cmd_attri>FROM_PC IPERF_TCPC</cmd_attri>
-            <native>yes</native>
-            <repeat>1</repeat>
-            <interval>1.0</interval>
-            <recv_interval>1</recv_interval>
-        </command>
-        <command execute="no">
-            <text>iperf</text>
-            <cmd_attri>FROM_DUT IPERF_TCPS</cmd_attri>
-            <repeat>1</repeat>
-            <interval>1.0</interval>
-            <recv_interval>1</recv_interval>
-        </command>
-        <command execute="no">
-            <text>iperf</text>
-            <cmd_attri>FROM_DUT IPERF_TCPC</cmd_attri>
             <repeat>1</repeat>
             <interval>1.0</interval>
             <recv_interval>1</recv_interval>

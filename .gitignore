@@ -4,6 +4,7 @@ Makefile
 Makefile.in
 !doc/Makefile.in
 *.la
+*.log
 *.lo
 *.o
 *.js
@@ -27,7 +28,6 @@ config.h*
 !android/config.h
 !Xcode/config.h
 .vs
-config.log
 config.status
 config.sub
 *.swp
