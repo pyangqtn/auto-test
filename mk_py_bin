@@ -1,3 +1,3 @@
 #!/bin/sh
 
-nuitka --standalone --onefile --remove-output --nofollow-imports $1
+nuitka --standalone --onefile --remove-output --nofollow-imports --include-module=auto_iperf $1

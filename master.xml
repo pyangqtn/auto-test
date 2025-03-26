@@ -1,6 +1,6 @@
 
 <master_config loop_count="1" readback="no">
     <config_file execute="no">scan_test.xml</config_file>
-    <config_file execute="no">iperf_test.xml</config_file>
+    <config_file execute="yes">iperf_test.xml</config_file>
 </master_config>
 
