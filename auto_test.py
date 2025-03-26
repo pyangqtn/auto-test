@@ -53,7 +53,7 @@ class UARTDevice:
         self.stop_bits = stop_bits
 
 class Command:
-    def __init__(self, text, repeat, interval, recv_interval, parse_rslt, native, execute, prerun=False, reasm=False, attri=None):
+    def __init__(self, text, repeat, interval, recv_interval, parse_rslt, native, execute, prerun=False, reasm=False, attri=None, newterm=False):
         self.text = text
         self.repeat = repeat
         self.interval = interval
@@ -64,6 +64,7 @@ class Command:
         self.prerun = prerun
         self.reasm = reasm
         self.attri = attri
+        self.newterm = newterm  # New terminal flag
 
     def run(self, ser, global_env):
         if not self.execute or self.text is None:
@@ -82,7 +83,17 @@ class Command:
         for _ in range(self.repeat):
             if self.native:
                 global_env.log(f"Executing native command: {self.text}")
-                subprocess.run(self.text, shell=True)
+                if self.newterm:
+                    # Open in a new terminal
+                    subprocess.Popen(["gnome-terminal", "--", "bash", "-c", self.text + "; exec bash"])
+                    # Open in a new terminal with KDE
+                    #subprocess.Popen(["konsole", "-e", self.text])
+                    # Open in a new terminal on Windows
+                    #subprocess.Popen(["cmd.exe", "/c", "start", "cmd.exe", "/k", self.text])
+                    # Open in a new terminal on macOS
+                    #subprocess.Popen(["osascript", "-e", f'tell app "Terminal" to do script "{self.text}"'])
+                else:
+                    subprocess.run(self.text, shell=True)
             else:
                 if ser is None:
                     return
@@ -193,13 +204,14 @@ def parse_config(config_file):
         prerun = cmd.find('prerun') is not None and cmd.find('prerun').text.strip().lower() == 'yes'
         reasm = False
         attri = None
+        newterm = cmd.find('newterm') is not None and cmd.find('newterm').text.strip().lower() == 'yes'
 
         cmd_attri_elem = cmd.find('cmd_attri')
         if cmd_attri_elem is not None:
             attri = cmd_attri_elem
             reasm = True
 
-        commands.append(Command(text, repeat, interval, recv_interval, parse_rslt, native, execute, prerun, reasm, attri))
+        commands.append(Command(text, repeat, interval, recv_interval, parse_rslt, native, execute, prerun, reasm, attri, newterm))
 
     return execution_count, global_env, device, commands
 

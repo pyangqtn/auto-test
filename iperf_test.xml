@@ -46,6 +46,7 @@
         <command execute="yes">
             <text>iperf</text>
             <native>yes</native>
+            <newterm>yes</newterm>
             <cmd_attri>
                 <iperf_type>server</iperf_type>
                 <iperf_mode>TCP</iperf_mode>
