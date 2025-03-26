@@ -75,3 +75,4 @@ build/
 tags
 cscope.*
 cscope.out
+__pycache__
