@@ -1,0 +1,37 @@
+#!/bin/bash
+# unlock_dev [suffix]      - Generate unlock_code.zip from fastboot
+# unlock_dev -u [suffix]   - Unzip signed file and flash unlock
+
+if [[ "$1" == "-u" ]]; then
+    suffix="${2:-dev}"
+    zipname="signed_unlock_code${suffix:+_$suffix}.zip"
+    [[ "$2" ]] || zipname="signed_unlock_code.zip"
+
+    # Clean up old signed files
+    rm -f signed_unlock_code*.txt
+
+    # Unzip
+    unzip "$zipname"
+
+    # Rename to standard name
+    mv signed_unlock_code*.txt signed_unlock_code.txt 2>/dev/null
+
+    # Flash
+    fastboot flash unlock signed_unlock_code.txt
+
+    # Log result
+    dsn=$(fastboot devices | awk '{print $1}')
+    status=$(fastboot getvar unlock_status 2>&1 | grep 'unlock_status:' | awk '{print $2}')
+    echo "$(date '+%Y-%m-%d %H:%M:%S') | $dsn | Unlock dev cmd: $suffix | Unlock rslt: $status" >> unlock.log
+
+    echo "Logged to unlock.log"
+else
+    suffix="${1:+_$1}"
+    zipname="unlock_code${suffix}.zip"
+
+    fastboot getvar unlock_code 2>&1 | grep 'unlock_code:' | awk '{printf $2}' > unlock_code.txt
+    zip "$zipname" unlock_code.txt
+
+    echo "Created $zipname"
+    echo "Contents: $(cat unlock_code.txt)"
+fi
