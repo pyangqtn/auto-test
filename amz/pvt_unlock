@@ -1,37 +1,43 @@
 #!/bin/bash
-# unlock_dev [suffix]      - Generate unlock_code.zip from fastboot
-# unlock_dev -u [suffix]   - Unzip signed file and flash unlock
+# pvt_unlock [prefix]      - Generate unlock_code_[prefix_]dsn.zip from fastboot
+# pvt_unlock -u [prefix]   - Unzip signed file and flash unlock
+
+dsn=$(fastboot getvar serialno 2>&1 | grep 'serialno:' | awk '{print $2}')
+if [[ -z "$dsn" ]]; then
+    echo "Error: No fastboot device found"
+    exit 1
+fi
 
 if [[ "$1" == "-u" ]]; then
-    suffix="${2:-dev}"
-    zipname="signed_unlock_code${suffix:+_$suffix}.zip"
-    [[ "$2" ]] || zipname="signed_unlock_code.zip"
-
-    # Clean up old signed files
     rm -f signed_unlock_code*.txt
 
-    # Unzip
-    unzip "$zipname"
+    zipfile=$(ls signed_unlock_code*_${dsn}.zip 2>/dev/null | head -1)
+    if [[ -z "$zipfile" ]]; then
+        echo "Error: No signed zip found for $dsn"
+        exit 1
+    fi
+    unzip "$zipfile"
 
-    # Rename to standard name
-    mv signed_unlock_code*.txt signed_unlock_code.txt 2>/dev/null
+    signed_file=$(ls signed_unlock_code*_${dsn}.txt 2>/dev/null | head -1)
+    if [[ -z "$signed_file" ]]; then
+        echo "Error: No signed unlock code file found"
+        exit 1
+    fi
 
-    # Flash
-    fastboot flash unlock signed_unlock_code.txt
+    fastboot flash unlock "$signed_file"
 
-    # Log result
-    dsn=$(fastboot devices | awk '{print $1}')
     status=$(fastboot getvar unlock_status 2>&1 | grep 'unlock_status:' | awk '{print $2}')
-    echo "$(date '+%Y-%m-%d %H:%M:%S') | $dsn | Unlock dev cmd: $suffix | Unlock rslt: $status" >> unlock.log
-
+    echo "$(date '+%Y-%m-%d %H:%M:%S') | $dsn | Unlock rslt: $status" >> unlock.log
     echo "Logged to unlock.log"
+    fastboot reboot
 else
-    suffix="${1:+_$1}"
-    zipname="unlock_code${suffix}.zip"
+    tag="${1:+${1}_}${dsn}"
+    codefile="unlock_code_${tag}.txt"
+    rm -f "$codefile"
 
-    fastboot getvar unlock_code 2>&1 | grep 'unlock_code:' | awk '{printf $2}' > unlock_code.txt
-    zip "$zipname" unlock_code.txt
+    fastboot getvar unlock_code 2>&1 | grep 'unlock_code:' | awk '{printf $2}' > "$codefile"
+    zip "unlock_code_${tag}.zip" "$codefile"
 
-    echo "Created $zipname"
-    echo "Contents: $(cat unlock_code.txt)"
+    echo "Created unlock_code_${tag}.zip"
+    echo "Contents: $(cat "$codefile")"
 fi
