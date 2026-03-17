@@ -1,0 +1,138 @@
+#!/bin/bash
+#
+# Pack persimmon build images into a .tar.bz2 matching the release layout.
+# Usage: ./gen_persimmon_img [-p path] [output_name]
+#   -p path      directory containing the image files (default: current dir)
+#   output_name  defaults to "userdebug_release-persimmon-kepler_userdebug"
+#
+
+set -euo pipefail
+
+usage() { echo "Usage: $0 [-p path] [output_name]"; exit 1; }
+
+SEARCH_DIR="."
+while getopts "p:" opt; do
+    case $opt in p) SEARCH_DIR="$OPTARG";; *) usage;; esac
+done
+shift $((OPTIND - 1))
+
+IMG_DIR="${SEARCH_DIR}"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BASE_NAME="${1:-userdebug_release-persimmon-kepler_userdebug}"
+OUTPUT_NAME="${BASE_NAME}_${TIMESTAMP}"
+STAGING_DIR=$(mktemp -d)
+DEST="${STAGING_DIR}/${OUTPUT_NAME}"
+
+step() { printf "\033[1;34m[%s] [%d/%d] %s\033[0m\n" "$(date +%H:%M:%S)" "$1" "$TOTAL_STEPS" "$2"; }
+TOTAL_STEPS=8
+
+cleanup() { rm -rf "${STAGING_DIR}"; }
+trap cleanup EXIT
+
+mkdir -p "${DEST}/image_files"
+
+# ============================================================
+# FILE LISTS — edit these arrays to add/remove files
+# ============================================================
+
+# Top-level required files (relative to IMG_DIR)
+TOP_FILES=(
+    flashaddon.py
+    flashimage.py
+    flashtelemetry.py
+    flashtools.py
+    tools/scripts/get_logs.sh
+    image_versions.txt
+    unlocker.sh
+)
+
+# Top-level optional files (glob patterns, skipped if missing)
+TOP_OPTIONAL=(
+    *-security.csv
+)
+
+# image_files/ — follow symlinks (-L)
+IMG_FOLLOW=(
+    boot.img
+    cache.img
+    system.img
+    system.verity.conf
+    userdata.img
+    vendor.img
+    vendor.verity.conf
+    dev_fip.bin
+    dev_fip_bl2_sentinel_fw.bin
+    prod_fip.bin
+    prod_fip_bl2_sentinel_fw.bin
+)
+
+# image_files/ — no symlink follow
+IMG_NOFOLLOW=(
+    vmlinux
+    gpt.bin
+    dev_aonlpi_fw.fit
+    prod_aonlpi_fw.fit
+    sentinel_bypass/fip_bl2.bin
+    sentinel_bypass/fip_ddr.bin
+    images_for_signing/sentinel_fw.bin
+)
+
+# Whole directories copied into image_files/
+IMG_DIRS=(
+    dev_build_images
+    dev_build_mcu
+    signed_mcu
+    unsigned
+)
+
+# Whole directories copied into image_files/ following symlinks
+IMG_DIRS_FOLLOW=(
+    signed
+)
+
+# ============================================================
+# COPY LOGIC — no need to edit below when changing file lists
+# ============================================================
+
+step 1 "Copying top-level files..."
+for f in "${TOP_FILES[@]}"; do
+    cp "${IMG_DIR}/${f}" "${DEST}/"
+done
+
+step 2 "Copying optional files..."
+for pat in "${TOP_OPTIONAL[@]}"; do
+    for f in "${IMG_DIR}"/${pat}; do
+        [ -f "$f" ] && cp "$f" "${DEST}/"
+    done
+done
+
+step 3 "Copying image files (follow symlinks)..."
+for f in "${IMG_FOLLOW[@]}"; do
+    cp -L "${IMG_DIR}/${f}" "${DEST}/image_files/"
+done
+
+step 4 "Copying image files (no symlink follow)..."
+for f in "${IMG_NOFOLLOW[@]}"; do
+    cp "${IMG_DIR}/${f}" "${DEST}/image_files/"
+done
+
+step 5 "Copying image directories..."
+for d in "${IMG_DIRS[@]}"; do
+    cp -a "${IMG_DIR}/${d}" "${DEST}/image_files/"
+done
+
+step 6 "Copying image directories (follow symlinks)..."
+for d in "${IMG_DIRS_FOLLOW[@]}"; do
+    cp -aL "${IMG_DIR}/${d}" "${DEST}/image_files/"
+done
+
+step 7 "Copying platform-tools..."
+cp -a "${IMG_DIR}/tools/platform-tools" "${DEST}/"
+
+step 8 "Creating tar.bz2 (this may take a while)..."
+OUTPUT_FILE="${SEARCH_DIR}/${OUTPUT_NAME}.tar.bz2"
+tar cjf "${OUTPUT_FILE}" -C "${STAGING_DIR}" "${OUTPUT_NAME}"
+
+echo ""
+echo "✅ Created: ${OUTPUT_FILE}"
+echo "   Size: $(du -h "${OUTPUT_FILE}" | cut -f1)"
