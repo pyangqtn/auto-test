@@ -1,24 +1,26 @@
 #!/bin/bash
 #
-# Pack persimmon build images into a .tar.bz2 matching the release layout.
-# Usage: ./gen_persimmon_img [-p path] [output_name]
-#   -p path      directory containing the image files (default: current dir)
-#   output_name  defaults to "userdebug_release-persimmon-kepler_userdebug"
+# Pack device build images into a .tar.bz2 matching the release layout.
+# Usage: ./gen_device_image [-p project] [-d path] [output_name]
+#   -p project   device project name (default: persimmon)
+#   -d path      directory containing the image files (default: current dir)
+#   output_name  defaults to "userdebug_release-<project>-kepler_userdebug"
 #
 
 set -euo pipefail
 
-usage() { echo "Usage: $0 [-p path] [output_name]"; exit 1; }
+usage() { echo "Usage: $0 [-p project] [-d path] [output_name]"; exit 1; }
 
+PROJECT="persimmon"
 SEARCH_DIR="."
-while getopts "p:" opt; do
-    case $opt in p) SEARCH_DIR="$OPTARG";; *) usage;; esac
+while getopts "p:d:" opt; do
+    case $opt in p) PROJECT="$OPTARG";; d) SEARCH_DIR="$OPTARG";; *) usage;; esac
 done
 shift $((OPTIND - 1))
 
 IMG_DIR="${SEARCH_DIR}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BASE_NAME="${1:-userdebug_release-persimmon-kepler_userdebug}"
+BASE_NAME="${1:-userdebug_release-${PROJECT}-kepler_userdebug}"
 OUTPUT_NAME="${BASE_NAME}_${TIMESTAMP}"
 STAGING_DIR=$(mktemp -d)
 DEST="${STAGING_DIR}/${OUTPUT_NAME}"
