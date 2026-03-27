@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""ADB reboot stress test with UART monitoring for multiple devices."""
+"""STR thermal stress test: suspend-to-RAM loop via UART with thermal delta monitoring."""
 
 import argparse
 import subprocess
-import serial
+import shutil
 import threading
 import time
 import re
@@ -13,7 +13,74 @@ import glob
 import platform
 from datetime import datetime
 
+
+def preflight_check():
+    """Check OS, required commands, and Python packages before running."""
+    os_name = platform.system()
+    print(f"OS: {os_name} ({platform.platform()})")
+    print(f"Python: {sys.version.split()[0]} ({sys.executable})")
+
+    errors = []
+
+    # Check required commands
+    for cmd in ['adb']:
+        if not shutil.which(cmd):
+            errors.append(f"  - '{cmd}' not found. Install Android SDK platform-tools.")
+
+    # Check pyserial (not 'serial')
+    try:
+        import serial
+        serial.Serial  # will fail if wrong 'serial' package
+    except (ImportError, AttributeError):
+        venv_hint = (
+            "  - 'pyserial' package missing or shadowed by 'serial'.\n"
+            "    Fix (recommended - use venv):\n"
+            "      python3 -m venv .venv\n"
+            "      source .venv/bin/activate\n"
+            "      pip install pyserial\n"
+            "    Fix (system-wide):\n"
+            "      pip uninstall serial pyserial && pip install pyserial"
+        )
+        errors.append(venv_hint)
+
+    # Linux-specific: check dialout group for UART access
+    if os_name == 'Linux':
+        import grp
+        try:
+            dialout = grp.getgrnam('dialout')
+            if os.getlogin() not in dialout.gr_mem and os.geteuid() != 0:
+                errors.append(
+                    f"  - User '{os.getlogin()}' not in 'dialout' group (needed for UART).\n"
+                    f"    Fix: sudo usermod -aG dialout {os.getlogin()} && logout/login"
+                )
+        except (KeyError, OSError):
+            pass
+
+    if errors:
+        print("\n⚠️  Preflight check FAILED:\n")
+        print("\n".join(errors))
+        sys.exit(1)
+
+    print("Preflight: OK\n")
+
+
+import serial
+
 SLACK_ENABLED = False
+THERMAL_DELTA_THRESHOLD = 2000
+
+def build_str_loop_cmd(no_sleep=False):
+    suspend = 'sleep 2' if no_sleep else 'echo mem > /sys/power/state'
+    return (
+        'while true; do '
+        'PRE=$(cat /sys/class/thermal/thermal_zone22/temp); '
+        f'{suspend}; '
+        'POST=$(cat /sys/class/thermal/thermal_zone22/temp); '
+        'DELTA=$((POST - PRE)); '
+        'echo "pre=$PRE  post=$POST  delta=$DELTA"; '
+        'sleep 1; '
+        'done\n'
+    )
 
 
 def log_match(log_file, match_info):
@@ -50,8 +117,6 @@ def enumerate_uart_ports():
 
 
 def read_serial_from_uart(port, baud, known_serials):
-    """Open UART, login as root, read device serial from devicetree.
-    Retries login since device may be at login prompt or already logged in."""
     try:
         ser = serial.Serial(port, baud, timeout=1)
         ser.reset_input_buffer()
@@ -60,7 +125,7 @@ def read_serial_from_uart(port, baud, known_serials):
             time.sleep(0.5)
             ser.write(b'root\n')
             time.sleep(1)
-            ser.read(ser.in_waiting or 1)  # drain
+            ser.read(ser.in_waiting or 1)
             ser.write(b'cat /sys/firmware/devicetree/base/serial-number\n')
             time.sleep(2)
             output = ser.read(ser.in_waiting or 4096).decode('utf-8', errors='ignore')
@@ -77,12 +142,10 @@ def read_serial_from_uart(port, baud, known_serials):
 
 
 def match_uart_via_marker(adb_devices, uart_ports, baud):
-    """Fallback: write unique marker via adb to /dev/console, read from UART ports."""
     mapping = {}
     matched_ports = set()
     for adb_sn in adb_devices:
         marker = f"UARTPROBE_{safe_filename(adb_sn)}_{int(time.time())}"
-        # Open all unmatched ports FIRST, then write marker
         ports_ser = {}
         for port in uart_ports:
             if port in matched_ports:
@@ -93,12 +156,10 @@ def match_uart_via_marker(adb_devices, uart_ports, baud):
                 ports_ser[port] = ser
             except (serial.SerialException, OSError):
                 continue
-        # Write marker via adb
         subprocess.run(['adb', '-s', adb_sn, 'shell',
                         f'echo {marker} > /dev/console'],
                        capture_output=True, text=True)
         time.sleep(2)
-        # Check which port received it
         for port, ser in ports_ser.items():
             output = ser.read(ser.in_waiting or 4096).decode('utf-8', errors='ignore')
             ser.close()
@@ -108,7 +169,6 @@ def match_uart_via_marker(adb_devices, uart_ports, baud):
                 print(f"  {port} -> {adb_sn} (via marker)")
                 break
         else:
-            # Close remaining ports
             for ser in ports_ser.values():
                 try:
                     ser.close()
@@ -117,11 +177,14 @@ def match_uart_via_marker(adb_devices, uart_ports, baud):
     return mapping
 
 
+def adb_device_online(sn):
+    result = subprocess.run(['adb', '-s', sn, 'get-state'],
+                            capture_output=True, text=True)
+    return result.stdout.strip() == 'device'
+
+
 def match_uart_to_adb(baud):
-    """Build {adb_serial: uart_port} mapping by probing UART ports.
-    Matches devicetree serial from UART against devicetree serial from adb shell."""
     adb_devices = get_adb_devices()
-    # Poll up to 30s for devices that may still be booting
     if not adb_devices:
         print("No ADB devices found, waiting up to 30s...")
         for i in range(30):
@@ -134,19 +197,16 @@ def match_uart_to_adb(baud):
         return {}
 
     mapping = {}
-
     print(f"ADB devices: {adb_devices}")
     print(f"UART ports:  {uart_ports}")
 
-    # Wait for all ADB devices to be fully online before probing
     for sn in adb_devices:
         print(f"Waiting for {sn} to be online...")
         while not adb_device_online(sn):
             time.sleep(1)
         print(f"  {sn} online")
 
-    # Get devicetree serial for each ADB device via adb shell
-    adb_dt_map = {}  # {devicetree_serial: adb_serial}
+    adb_dt_map = {}
     for sn in adb_devices:
         result = subprocess.run(['adb', '-s', sn, 'shell',
             'cat', '/sys/firmware/devicetree/base/serial-number'],
@@ -168,7 +228,6 @@ def match_uart_to_adb(baud):
         else:
             print(f"  {port} -> (no match)")
 
-    # Fallback: use adb echo marker for unmatched devices
     unmatched_adb = [sn for sn in adb_devices if sn not in mapping]
     unmatched_uart = [p for p in uart_ports if p not in mapping.values()]
     if unmatched_adb and unmatched_uart:
@@ -179,22 +238,14 @@ def match_uart_to_adb(baud):
     return mapping
 
 
-def adb_device_online(sn):
-    result = subprocess.run(['adb', '-s', sn, 'get-state'],
-                            capture_output=True, text=True)
-    return result.stdout.strip() == 'device'
-
-
-def adb_reboot(sn):
-    subprocess.run(['adb', '-s', sn, 'reboot'], capture_output=True)
+def safe_filename(sn):
+    return sn.replace(' ', '_')
 
 
 def spawn_uart_viewer(sn, raw_log, port, baud):
-    """Spawn a terminal window: tail -f raw log, then switch to picocom when signaled."""
     safe_sn = safe_filename(sn)
     signal_file = f"/tmp/uart_picocom_signal_{safe_sn}"
     script_path = f"/tmp/uart_viewer_{safe_sn}.sh"
-    # Remove stale signal
     try:
         os.remove(signal_file)
     except FileNotFoundError:
@@ -230,19 +281,27 @@ echo "[Switching to serial console: {sn} on {port}]"
 
 
 def signal_picocom(sn):
-    """Signal the viewer window to switch from tail -f to picocom."""
     signal_file = f"/tmp/uart_picocom_signal_{safe_filename(sn)}"
     open(signal_file, 'w').close()
 
 
-ADB_TIMEOUT = 120  # seconds before declaring device stuck
+THERMAL_RE = re.compile(r'pre=(\d+)\s+post=(\d+)\s+delta=(-?\d+)')
 
 
 def uart_reader(sn, port, baud, patterns, user, round_holder, stop_event,
-                match_event, matches, log_file, raw_log, observe_event=None):
-    """Read UART, check patterns, log matches. Runs in background thread."""
+                match_event, matches, log_file, raw_log, threshold, observe_event=None):
+    """Read UART, check thermal delta and patterns, log matches."""
     try:
         ser = serial.Serial(port, baud, timeout=1)
+        print(f"[{sn}] Logging in via UART and running /data/str_loop.sh...")
+        ser.write(b'\n')
+        time.sleep(0.5)
+        ser.write(b'root\n')
+        time.sleep(2)
+        ser.read(ser.in_waiting or 4096)  # drain login output
+        ser.write(b'/data/str_loop.sh\n')
+        print(f"[{sn}] Monitoring UART for thermal delta...")
+
         raw_f = open(raw_log, 'w')
         RAW_MAX = 1024
         buffer = []
@@ -251,7 +310,6 @@ def uart_reader(sn, port, baud, patterns, user, round_holder, stop_event,
             line = ser.readline().decode('utf-8', errors='ignore').strip()
             if line:
                 ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                # Write raw line to file for tail -f viewers
                 raw_f.write(line + '\n')
                 raw_f.flush()
                 if raw_f.tell() > RAW_MAX:
@@ -265,6 +323,22 @@ def uart_reader(sn, port, baud, patterns, user, round_holder, stop_event,
                     else "[UART]"
                 print(f"{prefix}[{sn}] {line}")
 
+                # Check thermal delta
+                m = THERMAL_RE.search(line)
+                if m:
+                    delta = abs(int(m.group(3)))
+                    round_holder[0] += 1
+                    rn = round_holder[0]
+                    if delta >= threshold:
+                        match_info = (f"==== round {rn} ====\n"
+                                      f"[{ts}]\n"
+                                      + '\n'.join(buffer))
+                        log_match(log_file, match_info)
+                        matches.append(match_info)
+                        post_to_slack(user, match_info)
+                        match_event.set()
+
+                # Check pattern file matches (reboot detection etc.)
                 if pending_match:
                     pending_match[4].append(line)
                     pending_match[3] -= 1
@@ -293,23 +367,14 @@ def uart_reader(sn, port, baud, patterns, user, round_holder, stop_event,
         print(f"[UART ERROR][{sn}] {e}")
 
 
-def safe_filename(sn):
-    """Replace spaces and special chars in serial for use in filenames."""
-    return sn.replace(' ', '_')
-
-
 def run_test(devices, args):
-    """Run reboot stress test for one or more devices from main process.
+    patterns = load_patterns(args.pattern_file) if args.pattern_file else []
+    if patterns:
+        print(f"Loaded {len(patterns)} patterns from {args.pattern_file}")
 
-    devices: list of (adb_serial, uart_port) tuples
-    """
-    patterns = load_patterns(args.pattern_file)
-    print(f"Loaded {len(patterns)} patterns from {args.pattern_file}")
-
-    # Per-device state
     dev_state = {}
     for sn, port in devices:
-        log_file = f"reboot_stress_matches_{safe_filename(sn)}.log"
+        log_file = f"str_thermal_stress_matches_{safe_filename(sn)}.log"
         raw_log = os.path.join(os.getcwd(), f"uart_raw_{safe_filename(sn)}.log")
         dev_state[sn] = {
             'port': port,
@@ -317,7 +382,7 @@ def run_test(devices, args):
             'raw_log': raw_log,
             'matches': [],
             'all_matches': [],
-            'round': [0],  # mutable holder so thread sees updates
+            'round': [0],
             'stop_event': threading.Event(),
             'match_event': threading.Event(),
             'observe_event': threading.Event(),
@@ -325,91 +390,58 @@ def run_test(devices, args):
         }
         print(f"  {sn} <-> {port}  (log: {log_file})")
 
-    # Clean up stale raw logs from previous runs
+    # Clean up stale raw logs
     for sn, st in dev_state.items():
         try:
             os.remove(st['raw_log'])
         except OSError:
             pass
 
-    # Spawn UART viewer windows for each device
+    # Push STR loop script via ADB, then disconnect and run via UART
+    suspend = 'sleep 2' if args.no_sleep else 'echo mem > /sys/power/state'
     for sn, port in devices:
-        open(dev_state[sn]['raw_log'], 'a').close()
-        print(f"Opening UART viewer for {sn}")
-        spawn_uart_viewer(sn, dev_state[sn]['raw_log'], port, args.baud)
-        time.sleep(1)
+        print(f"[{sn}] Pushing STR script to device...")
+        subprocess.run(['adb', '-s', sn, 'shell',
+                        'echo \'#!/bin/sh\nwhile true; do '
+                        'PRE=$(cat /sys/class/thermal/thermal_zone22/temp); '
+                        f'{suspend}; '
+                        'POST=$(cat /sys/class/thermal/thermal_zone22/temp); '
+                        'DELTA=$((POST - PRE)); '
+                        'echo "pre=$PRE  post=$POST  delta=$DELTA"; '
+                        'sleep 1; '
+                        'done\' > /data/str_loop.sh && chmod +x /data/str_loop.sh'],
+                       capture_output=True, text=True)
+        print(f"[{sn}] Disconnecting ADB...")
+        subprocess.run(['adb', '-s', sn, 'disconnect'], capture_output=True)
+    subprocess.run(['adb', 'kill-server'], capture_output=True)
+
+    # (disabled - single terminal mode)
 
     stop_all = threading.Event()
 
     def device_loop(sn, st):
-        """Independent reboot loop for one device."""
-        round_num = 0
         try:
-            while not stop_all.is_set() and (args.rounds == 0 or round_num < args.rounds):
-                round_num += 1
-                ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                print(f"\n[{ts}] === [{sn}] Round {round_num} ===")
+            st['stop_event'].clear()
+            st['observe_event'].clear()
+            st['match_event'].clear()
+            st['matches'] = []
+            t = threading.Thread(target=uart_reader,
+                args=(sn, st['port'], args.baud, patterns, args.user,
+                      st['round'], st['stop_event'], st['match_event'],
+                      st['matches'], st['log_file'], st['raw_log'],
+                      args.threshold, st['observe_event']))
+            t.daemon = True
+            t.start()
+            st['thread'] = t
 
-                print(f"[{sn}] Waiting for device...")
-                wait_start = time.time()
-                while not stop_all.is_set() and not adb_device_online(sn):
-                    time.sleep(1)
-                    if time.time() - wait_start > ADB_TIMEOUT:
-                        print(f"\n[TIMEOUT][{sn}] Device not online after {ADB_TIMEOUT}s")
-                        st['timed_out'] = True
-                        stop_all.set()
-                        break
-                if stop_all.is_set():
-                    break
-                print(f"[{sn}] Device online")
+            # Wait until stopped
+            while not stop_all.is_set():
+                time.sleep(1)
 
-                st['stop_event'].clear()
-                st['observe_event'].clear()
-                st['match_event'].clear()
-                st['matches'] = []
-                st['round'][0] = round_num
-                t = threading.Thread(target=uart_reader,
-                    args=(sn, st['port'], args.baud, patterns, args.user,
-                          st['round'], st['stop_event'], st['match_event'],
-                          st['matches'], st['log_file'], st['raw_log'],
-                          st['observe_event']))
-                t.daemon = True
-                t.start()
-                st['thread'] = t
-
-                print(f"[{sn}] Rebooting...")
-                adb_reboot(sn)
-
-                time.sleep(5)
-                wait_start = time.time()
-                while not stop_all.is_set() and not adb_device_online(sn):
-                    time.sleep(1)
-                    if args.stop_on_match and st['match_event'].is_set():
-                        break
-                    if time.time() - wait_start > ADB_TIMEOUT:
-                        print(f"\n[TIMEOUT][{sn}] Device not back after {ADB_TIMEOUT}s")
-                        st['timed_out'] = True
-                        stop_all.set()
-                        break
-                if st.get('timed_out'):
-                    break
-                print(f"[{sn}] Back online")
-
-                st['all_matches'].extend(st['matches'])
-
-                if args.stop_on_match and st['match_event'].is_set():
-                    print(f"\n[STOP][{sn}] Pattern matched in round {round_num}")
-                    st['observe_event'].set()
-                    # Stay alive so UART reader keeps running in observe mode
-                    while not stop_all.is_set():
-                        time.sleep(1)
-                    break
-
-                st['stop_event'].set()
+            st['all_matches'].extend(st['matches'])
         except Exception as e:
             print(f"[{sn}] Error: {e}")
 
-    # Start independent loop per device
     loops = []
     for sn, st in dev_state.items():
         t = threading.Thread(target=device_loop, args=(sn, st))
@@ -424,63 +456,53 @@ def run_test(devices, args):
         print("\n\nTest interrupted")
         stop_all.set()
         stop_all.interrupted = True
-
     finally:
-        # Stop UART readers and wait for them to release serial ports
+        stop_all.set()
         for st in dev_state.values():
             st['stop_event'].set()
 
-        need_picocom = not args.no_picocom and (
-            getattr(stop_all, 'interrupted', False) or
-            any(st.get('timed_out') for st in dev_state.values()))
-
-        if need_picocom:
-            time.sleep(2)  # let daemon UART reader threads close serial ports
+        # Kill str_loop.sh on devices via ADB
+        subprocess.run(['adb', 'start-server'], capture_output=True)
+        for sn in dev_state:
+            print(f"[{sn}] Killing str_loop.sh on device...")
+            subprocess.run(['adb', '-s', sn, 'shell', 'pkill', '-f', 'str_loop'],
+                           capture_output=True, text=True)
 
         print(f"\n=== Summary ===")
         for sn, st in dev_state.items():
             n = len(st['all_matches'])
             r = st['round'][0]
-            timeout = " [TIMED OUT]" if st.get('timed_out') else ""
-            print(f"  {sn}: {r} rounds, {n} matches{timeout} (log: {st['log_file']})")
+            print(f"  {sn}: {r} STR cycles, {n} thermal matches (log: {st['log_file']})")
             for m in st['all_matches']:
                 print(m)
 
-        # Picocom handoff only on Ctrl+C or timeout
-        if need_picocom:
-            for sn, st in dev_state.items():
-                print(f"Switching {sn} viewer to picocom on {st['port']}")
-                signal_picocom(sn)
-
 
 def main():
+    preflight_check()
     parser = argparse.ArgumentParser(
-        description='ADB reboot stress test with UART monitoring',
+        description='STR thermal stress test via UART with thermal delta monitoring',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''examples:
   %(prog)s                                 # auto-detect all devices
   %(prog)s -d SERIAL -p /dev/ttyUSB0       # single device, explicit
-  %(prog)s -n 100 --stop-on-match          # 100 rounds, stop on match
-  %(prog)s -n 0                            # infinite (Ctrl+C to stop)''')
-    parser.add_argument('-f', '--pattern-file', default='pattern',
-                        help='pattern file, one regex per line (default: pattern)')
+  %(prog)s -t 1000                         # thermal delta threshold 1000''')
+    parser.add_argument('-f', '--pattern-file', default=None,
+                        help='optional pattern file for reboot detection')
     parser.add_argument('-u', '--user',
                         help='Slack user to notify on match (disabled)')
     parser.add_argument('-p', '--port',
                         help='UART serial port (auto-detect if omitted)')
     parser.add_argument('-b', '--baud', type=int, default=921600,
                         help='UART baud rate (default: 921600)')
-    parser.add_argument('-n', '--rounds', type=int, default=0,
-                        help='number of reboot rounds, 0=infinite (default: 0)')
-    parser.add_argument('-s', '--stop-on-match', action='store_true',
-                        help='stop reboot loop on first pattern match')
     parser.add_argument('-d', '--device',
                         help='ADB device serial (auto-detect if omitted)')
-    parser.add_argument('--no-picocom', action='store_true',
-                        help='disable picocom handoff on exit/timeout (default: enabled)')
+    parser.add_argument('-t', '--threshold', type=int, default=THERMAL_DELTA_THRESHOLD,
+                        help=f'thermal delta threshold (default: {THERMAL_DELTA_THRESHOLD})')
+    parser.add_argument('--no-sleep', action='store_true',
+                        help='use "sleep 2" instead of suspend-to-RAM')
     args = parser.parse_args()
 
-    # Resolve device list
+    # Resolve device list (need ADB for initial UART mapping)
     if args.device and args.port:
         devices = [(args.device, args.port)]
     elif args.device or args.port:

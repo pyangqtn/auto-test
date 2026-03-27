@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ADB reboot stress test with UART monitoring for multiple devices."""
+"""ADB STR (suspend-to-RAM) stress test with UART monitoring for multiple devices."""
 
 import argparse
 import subprocess
@@ -185,8 +185,18 @@ def adb_device_online(sn):
     return result.stdout.strip() == 'device'
 
 
-def adb_reboot(sn):
-    subprocess.run(['adb', '-s', sn, 'reboot'], capture_output=True)
+def adb_str_cycle(sn):
+    """Execute one STR (suspend-to-RAM) cycle via adb, return thermal delta info."""
+    cmd = (
+        'PRE=$(cat /sys/class/thermal/thermal_zone22/temp); '
+        'echo mem > /sys/power/state; '
+        'POST=$(cat /sys/class/thermal/thermal_zone22/temp); '
+        'DELTA=$((POST - PRE)); '
+        'echo "pre=$PRE  post=$POST  delta=$DELTA"'
+    )
+    result = subprocess.run(['adb', '-s', sn, 'shell', cmd],
+                            capture_output=True, text=True, timeout=30)
+    return result.stdout.strip()
 
 
 def spawn_uart_viewer(sn, raw_log, port, baud):
@@ -299,7 +309,7 @@ def safe_filename(sn):
 
 
 def run_test(devices, args):
-    """Run reboot stress test for one or more devices from main process.
+    """Run STR stress test for one or more devices from main process.
 
     devices: list of (adb_serial, uart_port) tuples
     """
@@ -309,7 +319,7 @@ def run_test(devices, args):
     # Per-device state
     dev_state = {}
     for sn, port in devices:
-        log_file = f"reboot_stress_matches_{safe_filename(sn)}.log"
+        log_file = f"str_stress_matches_{safe_filename(sn)}.log"
         raw_log = os.path.join(os.getcwd(), f"uart_raw_{safe_filename(sn)}.log")
         dev_state[sn] = {
             'port': port,
@@ -342,7 +352,7 @@ def run_test(devices, args):
     stop_all = threading.Event()
 
     def device_loop(sn, st):
-        """Independent reboot loop for one device."""
+        """Independent STR loop for one device."""
         round_num = 0
         try:
             while not stop_all.is_set() and (args.rounds == 0 or round_num < args.rounds):
@@ -377,10 +387,14 @@ def run_test(devices, args):
                 t.start()
                 st['thread'] = t
 
-                print(f"[{sn}] Rebooting...")
-                adb_reboot(sn)
+                print(f"[{sn}] Suspending (STR)...")
+                try:
+                    thermal_info = adb_str_cycle(sn)
+                    print(f"[{sn}] STR result: {thermal_info}")
+                except subprocess.TimeoutExpired:
+                    print(f"[{sn}] STR command timed out")
 
-                time.sleep(5)
+                time.sleep(args.sleep)
                 wait_start = time.time()
                 while not stop_all.is_set() and not adb_device_online(sn):
                     time.sleep(1)
@@ -455,13 +469,14 @@ def run_test(devices, args):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='ADB reboot stress test with UART monitoring',
+        description='ADB STR (suspend-to-RAM) stress test with UART monitoring',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''examples:
   %(prog)s                                 # auto-detect all devices
   %(prog)s -d SERIAL -p /dev/ttyUSB0       # single device, explicit
   %(prog)s -n 100 --stop-on-match          # 100 rounds, stop on match
-  %(prog)s -n 0                            # infinite (Ctrl+C to stop)''')
+  %(prog)s -n 0                            # infinite (Ctrl+C to stop)
+  %(prog)s --sleep 5                       # 5s between STR cycles''')
     parser.add_argument('-f', '--pattern-file', default='pattern',
                         help='pattern file, one regex per line (default: pattern)')
     parser.add_argument('-u', '--user',
@@ -471,13 +486,15 @@ def main():
     parser.add_argument('-b', '--baud', type=int, default=921600,
                         help='UART baud rate (default: 921600)')
     parser.add_argument('-n', '--rounds', type=int, default=0,
-                        help='number of reboot rounds, 0=infinite (default: 0)')
+                        help='number of STR rounds, 0=infinite (default: 0)')
     parser.add_argument('-s', '--stop-on-match', action='store_true',
-                        help='stop reboot loop on first pattern match')
+                        help='stop STR loop on first pattern match')
     parser.add_argument('-d', '--device',
                         help='ADB device serial (auto-detect if omitted)')
     parser.add_argument('--no-picocom', action='store_true',
                         help='disable picocom handoff on exit/timeout (default: enabled)')
+    parser.add_argument('--sleep', type=int, default=1,
+                        help='seconds to sleep after STR before checking device (default: 1)')
     args = parser.parse_args()
 
     # Resolve device list
